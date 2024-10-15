@@ -1,0 +1,62 @@
+c = TaggedCorpus(Path("../data/icsup"))c.tagset
+
+1ai
+The new prob that day 1 is hot is 0.491
+It is roughly 0.5 because the prob of the path starting with HHH is roughly the same as the prob of the path starting with CHH.
+Let's call the prob of the first path P_HHH and that of the second P_CHH. The emission prob e and the transition prob q
+
+P_HHH
+= q(H|BOS)*e(1|H)*q(H|H)*e(3|H)*q(H|H)*e(3|H)
+= 0.5*0.1*0.8*e(3|H)*q(H|H)*e(3|H)
+
+P_HHH
+= q(C|BOS)*e(1|C)*q(H|C)*e(3|H)*q(H|H)*e(3|H)
+= 0.5*0.7*0.1*e(3|H)*q(H|H)*e(3|H)
+
+They are roughly the same
+
+1aii
+Before change, the prob of day2 being hot is 0.977
+After change, the prob of day2 being hot is 0.918
+The prob of day2 being hot decreases a little as the number of ice cream of day1 changes from 2 to 1
+The cell is K28
+
+1aiii
+The most obvious change is that P(H) remains high on the first 7 days before change while P(H) increase from 0 to almost 1 on the first 7 days after change.
+
+1bi
+The most obvious change is that P(H) of day11 severly drops from 0.752 to 0. Besides, P(H) of days around day11 also drop.
+
+1bii
+The final graph doesn't change much.
+
+1biii
+P(1|H) is 1.6E-04 on 10th iteration before change.
+P(1|H) is 0 on 10th iteration after change.
+
+P(1|H) remains 0 in each iteration.
+We can use counter-proof to easily show this point.
+Assume that at a certain Expectation Step, our P(1|H) becomes positive for the first time. We call this Exp Step En
+Then we can infer that at the Max Step before this Exp Step, count(h->1) is positive. We call this Max Step M(n-1)
+Then we can infer that at the Exp Step before this Max Step, P(1|H) is positive (Otherwise, P(1|H) is 0 and count(H->1) is also 0). We call this Exp Step E(n-1)
+However, it is mentioned that at En, P(1|H) becomes positive for the first time, which means that P(1|H) can't be positive at E(n-1)
+Thus we have a contradictory
+
+1ci
+Note that our subscribe ranges from 0 to n+1
+Beta(0, BOS) is the prob of the whole sentence
+
+1cii
+For the left tree,
+the meaning of a inner node H is that we assign the brother node of this node H, which is a number (1,2,or 3), a tag H.
+the meaning of a H constituent is that we assign tags from the position of this H according to the descent nodes of this H node.
+The prob of rule H->1 C is the product of the transmission prob and emission prob, namely q(C|H)*e(1|C)
+The prob of rule H->e is the transmission prob q(EOS|H)
+We prefer the tree on the right because it conforms to CNF.
+
+
+
+
+
+
+
