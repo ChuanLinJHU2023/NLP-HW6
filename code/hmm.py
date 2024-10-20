@@ -170,6 +170,7 @@ class HiddenMarkovModel(nn.Module):
         for s in range(self.A.size(0)):   # rows
             row = [str(self.tagset[s])] + [f"{self.A[s,t]:.3f}" for t in range(self.A.size(1))]
             print("\t".join(row))
+
         print("\nEmission matrix B:")        
         col_headers = [""] + [str(self.vocab[w]) for w in range(self.B.size(1))]
         print("\t".join(col_headers))
@@ -179,11 +180,16 @@ class HiddenMarkovModel(nn.Module):
         print("\n")
 
 
+    def get_one_hot_vector(self, index_for_nonzero: int):
+        res = torch.zeros(self.k)
+        res[index_for_nonzero] = 1
+        return res
+
     @typechecked
     def log_prob(self, sentence: Sentence, corpus: TaggedCorpus) -> TorchScalar:
         """Compute the log probability of a single sentence under the current
-        model parameters.  If the sentence is not fully tagged, the probability
-        will marginalize over all possible tags.  
+        model parameters.  ********* If the sentence is not fully tagged, the probability
+        will marginalize over all possible tags. *****************
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
@@ -192,15 +198,43 @@ class HiddenMarkovModel(nn.Module):
 
     @typechecked
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> TorchScalar:
-        """Run the forward algorithm from the handout on a tagged, untagged, 
-        or partially tagged sentence.  Return log Z (the log of the forward 
+        """Run the forward algorithm from the handout on ********** a tagged, untagged,
+        or partially tagged sentence. ************** Return log Z (the log of the forward
         probability).
 
         The corpus from which this sentence was drawn is also passed in as an
         argument, to help with integerization and check that we're 
-        integerizing correctly."""
+        integerizing correctly.
+
+        Chuan:
+        We utilize A.4 Matrix Formulas and equation 12 to enhance the performance
+        Here is equation 12
+        a(j) = [a(j-1) @ A ] * B_*wj
+        However, to deal with the partially tagged sentence and the tag restriction tau in algorithm 1,
+        we need to make the following changes to equation 12
+        Assume that tau(j) is a 0-1 mask vector of length k (where k is the number of tags)
+        Then we modify equation 12 into
+        a(j) = ( [a(j-1) @ A ] * B_*wj ) * tau(j)
+        """
 
         sent = self._integerize_sentence(sentence, corpus)
+        assert sent[0][1] == self.bos_t
+        assert sent[-1][1] == self.eos_t
+
+        logger.debug(" We are running forward algo on the following sentence ")
+        logger.debug(sentence)
+        logger.debug(sent)
+
+        alpha = [torch.empty(self.k) for _ in sent]
+        alpha[0] = self.get_one_hot_vector(self.bos_t)
+        for i in range(1, len(alpha)): # skip i for bos and eos
+            word_i, tag_i = sent[i]
+            mask_vector = self.get_one_hot_vector(tag_i)
+            alpha_i = (alpha[i - 1] @ self.A) * self.B[:, word_i]
+            alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
+        Z = alpha[-1][self.eos_t]
+        return Z
+        # raise NotImplementedError   # you fill this in!
 
         # The "nice" way to construct the sequence of vectors alpha[0],
         # alpha[1], ...  is by appending to a List[Tensor] at each step.
@@ -208,30 +242,76 @@ class HiddenMarkovModel(nn.Module):
         # preallocate a list of length n+2 so that we can assign directly
         # to each alpha[j] in turn.
 
-        alpha = [torch.empty(self.k) for _ in sent]
-
         # Alternatively, when running the forward algorithm or the Viterbi
         # algorithm, you don't really need to keep a whole list of vectors.
         # You could just have two variables: on step j through the loop,
         # alpha_new is computed from alpha_prev, where those represent the
         # vectors that the handout calls alpha[j] and alpha[j-1].
-        # 
+
         # If you're tracking gradients, then alpha[j-1] will still
         # remember how it depends on alpha[j-2], which will still remember
         # how it depends on alpha[j-3].  That is how PyTorch supports
         # backprop.  But you don't need to store those earlier vectors in a
         # Python variable of your own.
-        #
+
         # The only reason to store the whole list of vectors is if you find
         # it personally convenient for your coding.  It will let your code
         # more closely match the pseudocode in the handout, and you might wish 
         # to inspect the list when debugging.
-        
-        raise NotImplementedError   # you fill this in!
+
+
+    def hstack(self, v: torch.Tensor):
+        assert len(v) == self.k
+        return torch.hstack([v]*self.k)
+
+    def vstack(self, v: torch.Tensor):
+        assert len(v) == self.k
+        return torch.hstack([v.unsqueeze(1)]*self.k)
 
     def viterbi_tagging(self, sentence: Sentence, corpus: TaggedCorpus) -> Sentence:
         """Find the most probable tagging for the given sentence, according to the
-        current model."""
+        current model.
+
+        Chuan:
+        We utilize A.4 Matrix Formulas and equation 12 to enhance the performance
+        Here is equation 12
+        a(j) = [a(j-1) @ A ] * B_*wj
+        However, to deal with algorithm 2,
+        we need to make the following changes to equation 12
+        Assume that tau(j) is a 0-1 mask vector of length k (where k is the number of tags)
+        Then we modify equation 12 into
+        a(j) =              max( HStack(a(j-1)) * A * VStack(B_*wj) , dim = 0 ) * tau(j)
+        backpointer(j) = argmax( HStack(a(j-1)) * A * VStack(B_*wj) , dim = 0 ) * tau(j)
+        HStack(v) is a matrix by stacking multiple vectors v horizontally
+        """
+
+        sent = self._integerize_sentence(sentence, corpus)
+        logger.debug(" We are running forward algo on the following sentence ")
+        logger.debug(sentence)
+        logger.debug(sent)
+
+        alpha = [torch.empty(self.k) for _ in sent]
+        backpointer = [torch.empty(self.k) for _ in sent]
+
+        alpha[0] = self.get_one_hot_vector(self.bos_t)
+        for i in range(1, len(alpha)): # skip i for bos and eos
+            word_i, tag_i = sent[i]
+            mask_vector = self.get_one_hot_vector(tag_i)
+            alpha_i, backpointer_i = torch.max(self.hstack(alpha[i-1]) * self.A * self.vstack(self.B[:, word_i]),
+                                                 dim=0)
+            alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
+            backpointer[i] = backpointer_i if tag_i is None else backpointer_i * mask_vector
+
+        tags = [None] * len(sentence)
+        tags[len(sentence)-1] = self.eos_t
+        for i in range(len(sentence)-1, 0, -1):
+            tags[i-1] = backpointer[i][tags[i]]
+        assert tags[0] == self.bos_t
+        tags_real = [self.tagset[tag] for tag in tags]
+        words_real = [word for word, _ in sentence]
+        return_sentence = Sentence(list(zip(words_real, tags_real)))
+        return return_sentence
+        # raise NotImplementedError   # you fill this in!
 
         # Note: This code is mainly copied from the forward algorithm.
         # We just switch to using max, and follow backpointers.
@@ -245,10 +325,6 @@ class HiddenMarkovModel(nn.Module):
         # that's what downstream methods like eval_tagging will
         # expect.  (Running mypy on your code will check that your
         # code conforms to the type annotations ...)
-
-        sent = self._integerize_sentence(sentence, corpus)
-
-        raise NotImplementedError   # you fill this in!
 
     def train(self,
               corpus: TaggedCorpus,
