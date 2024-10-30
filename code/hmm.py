@@ -199,7 +199,7 @@ class HiddenMarkovModel(nn.Module):
     @typechecked
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> TorchScalar:
         """Run the forward algorithm from the handout on ********** a tagged, untagged,
-        or partially tagged sentence. ************** Return log Z (the log of the forward
+        or partially tagged sentence. ************** Return <<<<<<<log Z>>>>>>> (the log of the forward
         probability).
 
         The corpus from which this sentence was drawn is also passed in as an
@@ -212,7 +212,7 @@ class HiddenMarkovModel(nn.Module):
         a(j) = [a(j-1) @ A ] * B_*wj
         However, to deal with the partially tagged sentence and the tag restriction tau in algorithm 1,
         we need to make the following changes to equation 12
-        Assume that tau(j) is a 0-1 mask vector of length k (where k is the number of tags)
+        Assume that tau(j) is a 0/1 mask vector of length k (where k is the number of tags)
         Then we modify equation 12 into
         a(j) = ( [a(j-1) @ A ] * B_*wj ) * tau(j)
         """
@@ -227,13 +227,20 @@ class HiddenMarkovModel(nn.Module):
 
         alpha = [torch.empty(self.k) for _ in sent]
         alpha[0] = self.get_one_hot_vector(self.bos_t)
+        logger.debug("On i = 0, we have alpha = ")
+        logger.debug(alpha[0])
+
         for i in range(1, len(alpha)): # skip i for bos and eos
             word_i, tag_i = sent[i]
             mask_vector = self.get_one_hot_vector(tag_i)
             alpha_i = (alpha[i - 1] @ self.A) * self.B[:, word_i]
             alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
-        Z = alpha[-1][self.eos_t]
-        return Z
+            logger.debug(f"On i = {i}, we have alpha = ")
+            logger.debug(alpha[i])
+
+        z = alpha[-1][self.eos_t]
+        log_z = torch.log(z)
+        return log_z
         # raise NotImplementedError   # you fill this in!
 
         # The "nice" way to construct the sequence of vectors alpha[0],
@@ -260,13 +267,25 @@ class HiddenMarkovModel(nn.Module):
         # to inspect the list when debugging.
 
 
-    def hstack(self, v: torch.Tensor):
-        assert len(v) == self.k
-        return torch.hstack([v]*self.k)
+    def hstack(self, v: torch.Tensor, n = None):
+        """
+        horizontally stack column vectors!!!!! We have n such vectors
+        See stack_methods.py for usage of this function
+        """
+        n = self.k if n is None else n
+        result = torch.concat([v.unsqueeze(1)] * n, dim=1)  # unsqueeze(1) to get column vector
+        assert result.shape == (len(v), n)
+        return result
 
-    def vstack(self, v: torch.Tensor):
-        assert len(v) == self.k
-        return torch.hstack([v.unsqueeze(1)]*self.k)
+    def vstack(self, v: torch.Tensor, n = None):
+        """
+        vertically stack row vectors!!!!! We have n such vectors
+        See stack_methods.py for usage of this function
+        """
+        n = self.k if n is None else n
+        result = torch.concat([v.unsqueeze(0)] * n, dim=0)  # unsqueeze(0) to get row vector
+        assert result.shape == (n, len(v))
+        return result
 
     def viterbi_tagging(self, sentence: Sentence, corpus: TaggedCorpus) -> Sentence:
         """Find the most probable tagging for the given sentence, according to the
@@ -278,22 +297,25 @@ class HiddenMarkovModel(nn.Module):
         a(j) = [a(j-1) @ A ] * B_*wj
         However, to deal with algorithm 2,
         we need to make the following changes to equation 12
-        Assume that tau(j) is a 0-1 mask vector of length k (where k is the number of tags)
+        Assume that tau(j) is a 0/1 mask vector of length k (where k is the number of tags)
         Then we modify equation 12 into
-        a(j) =              max( HStack(a(j-1)) * A * VStack(B_*wj) , dim = 0 ) * tau(j)
+        a(j)           =    max( HStack(a(j-1)) * A * VStack(B_*wj) , dim = 0 ) * tau(j)
         backpointer(j) = argmax( HStack(a(j-1)) * A * VStack(B_*wj) , dim = 0 ) * tau(j)
-        HStack(v) is a matrix by stacking multiple vectors v horizontally
+        HStack(v) is a matrix by stacking multiple col vectors v horizontally
+        VStack(v) is a matrix by stacking multiple row vectors v vertically
         """
 
         sent = self._integerize_sentence(sentence, corpus)
-        logger.debug(" We are running forward algo on the following sentence ")
+        logger.debug(" We are running viterbi algo on the following sentence ")
         logger.debug(sentence)
         logger.debug(sent)
 
         alpha = [torch.empty(self.k) for _ in sent]
         backpointer = [torch.empty(self.k) for _ in sent]
-
         alpha[0] = self.get_one_hot_vector(self.bos_t)
+        logger.debug("On i = 0, we have alpha = ")
+        logger.debug(alpha[0])
+
         for i in range(1, len(alpha)): # skip i for bos and eos
             word_i, tag_i = sent[i]
             mask_vector = self.get_one_hot_vector(tag_i)
@@ -301,6 +323,8 @@ class HiddenMarkovModel(nn.Module):
                                                  dim=0)
             alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
             backpointer[i] = backpointer_i if tag_i is None else backpointer_i * mask_vector
+            logger.debug(f"On i = {i}, we have alpha = ")
+            logger.debug(alpha[i])
 
         tags = [None] * len(sentence)
         tags[len(sentence)-1] = self.eos_t
