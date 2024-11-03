@@ -253,6 +253,9 @@ class TaggedCorpus:
 
     def integerize_tword(self, tword: TWord) -> Tuple[int, Optional[int]]:
         word, tag = tword
+        # print("This is print on line 256 in corpus.py")
+        # print(word, tag)
+        # print(self.integerize_word(word), (None if tag is None else self.integerize_tag(tag)))
         return self.integerize_word(word), (None if tag is None else self.integerize_tag(tag))
 
     def integerize_sentence(self, sentence: Sentence) -> List[Tuple[int, Optional[int]]]:

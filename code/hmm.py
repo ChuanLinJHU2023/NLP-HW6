@@ -96,8 +96,12 @@ class HiddenMarkovModel(nn.Module):
         # how to handle.
         if corpus.tagset != self.tagset or corpus.vocab != self.vocab:
             raise TypeError("The corpus that this sentence came from uses a different tagset or vocab")
-
         # If so, go ahead and integerize it.
+        # print("This is print on _integerize_sentence line 92 hmm.py")
+        # print(sentence)
+        # print(corpus.integerize_sentence(sentence))
+        # print(corpus.vocab._objects)
+        # print(corpus.tagset._objects)
         return corpus.integerize_sentence(sentence)
 
     def init_params(self) -> None:
@@ -181,6 +185,8 @@ class HiddenMarkovModel(nn.Module):
 
 
     def get_one_hot_vector(self, index_for_nonzero: int):
+        if index_for_nonzero is None:
+            return None
         res = torch.zeros(self.k)
         res[index_for_nonzero] = 1
         return res
@@ -230,7 +236,7 @@ class HiddenMarkovModel(nn.Module):
         logger.debug("On i = 0, we have alpha = ")
         logger.debug(alpha[0])
 
-        for i in range(1, len(alpha)): # skip i for bos and eos
+        for i in range(1, len(alpha)-1):  # skip i for bos and eos
             word_i, tag_i = sent[i]
             mask_vector = self.get_one_hot_vector(tag_i)
             alpha_i = (alpha[i - 1] @ self.A) * self.B[:, word_i]
@@ -238,6 +244,16 @@ class HiddenMarkovModel(nn.Module):
             logger.debug(f"On i = {i}, we have alpha = ")
             logger.debug(alpha[i])
 
+        # Here is i for eos
+        i = len(alpha)-1
+        word_i, tag_i = sent[i]
+        mask_vector = self.get_one_hot_vector(tag_i)
+        alpha_i = (alpha[i - 1] @ self.A) # we don't need to consider the emission of word eos
+        alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
+        logger.debug(f"On i = {i}, we have alpha = ")
+        logger.debug(alpha[i])
+
+        assert alpha[-1][self.eos_t] != 0
         z = alpha[-1][self.eos_t]
         log_z = torch.log(z)
         return log_z
@@ -311,12 +327,12 @@ class HiddenMarkovModel(nn.Module):
         logger.debug(sent)
 
         alpha = [torch.empty(self.k) for _ in sent]
-        backpointer = [torch.empty(self.k) for _ in sent]
+        backpointer = [torch.empty(self.k, dtype=torch.int32) for _ in sent]
         alpha[0] = self.get_one_hot_vector(self.bos_t)
         logger.debug("On i = 0, we have alpha = ")
         logger.debug(alpha[0])
 
-        for i in range(1, len(alpha)): # skip i for bos and eos
+        for i in range(1, len(alpha)-1): # skip i for bos and eos
             word_i, tag_i = sent[i]
             mask_vector = self.get_one_hot_vector(tag_i)
             alpha_i, backpointer_i = torch.max(self.hstack(alpha[i-1]) * self.A * self.vstack(self.B[:, word_i]),
@@ -326,10 +342,22 @@ class HiddenMarkovModel(nn.Module):
             logger.debug(f"On i = {i}, we have alpha = ")
             logger.debug(alpha[i])
 
+        # Here is i for eos
+        i = len(alpha)-1
+        word_i, tag_i = sent[i]
+        mask_vector = self.get_one_hot_vector(tag_i)
+        alpha_i, backpointer_i = torch.max(self.hstack(alpha[i - 1]) * self.A, # we don't need to consider the emission of word eos
+                                           dim=0)
+        alpha[i] = alpha_i if tag_i is None else alpha_i * mask_vector
+        backpointer[i] = backpointer_i if tag_i is None else backpointer_i * mask_vector
+        logger.debug(f"On i = {i}, we have alpha = ")
+        logger.debug(alpha[i])
+
         tags = [None] * len(sentence)
         tags[len(sentence)-1] = self.eos_t
         for i in range(len(sentence)-1, 0, -1):
-            tags[i-1] = backpointer[i][tags[i]]
+            # make sure that each tag is a int!!!!!!
+            tags[i-1] = int(backpointer[i][tags[i]])
         assert tags[0] == self.bos_t
         tags_real = [self.tagset[tag] for tag in tags]
         words_real = [word for word, _ in sentence]
