@@ -55,6 +55,62 @@ The prob of rule H->e is the transmission prob q(EOS|H)
 We prefer the tree on the right because it conforms to CNF.
 
 
+2a
+Note that n is the length of the sentence without counting the BOS and EOS.
+BOS is at position 0 while EOS is at position n+1
+alpha_BOS(0) = 1 is because that the tag at position 0 must be BOS
+bera_EOS(b) = 1 is because that the tag at position n+1 must be EOS
+
+2b
+This is because the ground-truth tagging is not always the tagging with lowest perplexity.
+On raw file, our HMM always returns the perplexity of the tagging with lowest perplexity
+One dev file, our HMM always returns the perplexity of the correct tagging
+
+2c
+The purpose of dev is testing, which means that dev can't be seen during training.
+The purpose of sup and raw is training (supervised learning and unsupervised learning), which means that they should be used during training.
+If we use dev for training, we will overestimate the performance of our HMM during testing.
+
+2d
+The backoff of the emission probability limits the performance on known words.
+As we know, the emission prob is P(word_i, tag_i).
+However, the emission of a word is not only determined by the corresponding tag.
+It is also determined by the context words.
+Assume that I say "I eat <Noun>". The emission prob of <Noun> is affected by "I eat".
+As a result, it will probably emit "fish" or "food", and so on.
+We still prefer HMM because it is simple and we can get a parameter estimation with less variance.
+
+2e
+The iterations of semi-supervised training does help overall tagging accuracy because the information contained in the partially tagged sentences is still useful.
+For example, we can improve our emission prob with semi-supervised learning because the partially-tagged sentences give us a lot of <tag, word> pairs, which improves our frequency estimation of emission.
+The tagging accuracy on known words is better than that of seen words, which is better than that of novel words.
+This is because there is a lot of information contained in our word embeddings and training dataset, which improves the tagging accuracy.
+For novel words, we don't have such a reasonable word embedding in lexicon and statistical information in the training dataset, which decreases our tagging accuracy.
+
+2f
+The iterations of semi-supervised training does help overall tagging accuracy because the information contained in the partially tagged sentences is still useful.
+For example, we can improve our emission prob with semi-supervised learning because the partially-tagged sentences give us a lot of <tag, word> pairs, which improves our frequency estimation of emission.
+Besides, given the tagging of a word, our model can better predict the tagging of the context words, which improves the learning of transition prob and emission prob.
+To get the additional value from enraw, we should use it to do unsupervised learning. Besides, we should also partially tag the sentences within it and do semi-supervised learning.
+The tagging can be done by human or our current HMM if HMM is pretty sure about the tagging of certain words.
+
+2g
+Here are two reasons for why semi-supervised learning may not help.
+Firstly, the information of partially tagged sentences overlaps with the fully tagged sentences, which means that our model can't learn something new from these partially tagged sentences.
+For example, assume that we train our HMM on fully tagged sentences and then delete some tags of these sentences to get partially tagged sentences and do semi-supervised learning. Then it will probably not help.
+Second, the tags in the partially tagged sentences are with a certain bias.
+Usually, when a sentence is partially tagged, there is some reason that why some words are tagged while the others are not.
+The reason here may contain some bias, which means that the statistical information in partially-tagged sentences may not be consistent with statistical information in real word.
+We can only be sure that there is no such bias if partially tagged sentences are obtained by randomly deleting some tags in fully tagged sentences
+
+2h
+"enraw + ensup" is a good training strategy that works because it can make our model to benefit from the supervised learning and semi-supervised learning simultaneously.
+However, there should be a hyper parameter K to control how much gradient do we receive from ensup compared with from enraw.
+The training strategt "enraw + ensup + ensup + ensup" is just the case where K=3.
+Besides, the staged training also works.
+
+
+
 
 
 
